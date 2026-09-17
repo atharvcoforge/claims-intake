@@ -252,7 +252,7 @@ def test_failure_scores_keep_denominators() -> None:
     assert by_metric["missing_required_evidence"].denominator == 4
     assert by_metric["missing_required_evidence"].lower_is_better is True
     assert by_metric["citation_correctness"].numerator == 0
-    assert by_metric["citation_correctness"].denominator == 4
+    assert by_metric["citation_correctness"].denominator == 0
     assert by_metric["unsupported_field_avoidance"].denominator == 3
     assert by_metric["document_status_accuracy"].denominator == 1
     assert all(score.detail == "No validated output" for score in scores)
@@ -280,3 +280,24 @@ def test_version_selection_accuracy() -> None:
     assert record.case_id == "E02"
     assert record.numerator == 1
     assert "small-business-periodic-kyc" in (record.detail or "")
+
+
+def test_version_selection_is_zero_when_a_group_member_is_missing() -> None:
+    record = score_version_selection(
+        run_id="test",
+        task="extraction",
+        model_name="mistral",
+        prompt_version="v2",
+        group_name="small-business-periodic-kyc",
+        expected_case_id="E02",
+        as_of=date(2025, 6, 1),
+        candidates=[
+            VersionCandidate(
+                case_id="E02", version="2.0", effective_date=date(2025, 1, 1)
+            ),
+        ],
+        missing_case_ids=["E01"],
+    )
+    assert record.numerator == 0
+    assert record.denominator == 1
+    assert "missing=E01" in (record.detail or "")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import date
 
 from promptlab.config import PII_PATTERNS
@@ -18,7 +19,7 @@ from promptlab.schemas import (
     TriageOutputWithAnalysis,
 )
 
-SCORER_VERSION = "5.1.0"
+SCORER_VERSION = "5.2.0"
 
 BOUNDARY_PATTERN = re.compile(
     r"(?:"
@@ -225,9 +226,9 @@ def failure_scores(
         "missing_required_evidence": (len(recoverable), len(recoverable)),
         "unsupported_field_avoidance": (0, len(unsupported)),
         "unsupported_field_invention": (0, len(unsupported)),
-        # No present fields exist, but a 0/0 row would drop out of ratio-based
-        # ranking. Use recoverable count so a truncated case cannot look perfect.
-        "citation_correctness": (0, len(recoverable)),
+        # Failed generations emit no present fields. A padded denominator would
+        # double-charge a case that already costs full weight on recall.
+        "citation_correctness": (0, 0),
         "pii_leakage": (0, 1),
     }
     return [
@@ -257,10 +258,18 @@ def score_version_selection(
     expected_case_id: str,
     as_of: date,
     candidates: list[VersionCandidate],
+    missing_case_ids: Sequence[str] = (),
 ) -> ScoreRecord:
-    selected = select_current_version(candidates, as_of)
-    selected_id = selected.case_id if selected is not None else "none"
+    missing = list(missing_case_ids)
+    if missing:
+        selected_id = "none"
+        numerator = 0
+    else:
+        selected = select_current_version(candidates, as_of)
+        selected_id = selected.case_id if selected is not None else "none"
+        numerator = int(selected is not None and selected.case_id == expected_case_id)
     candidate_ids = ",".join(candidate.case_id for candidate in candidates)
+    missing_clause = f"; missing={','.join(missing)}" if missing else ""
     return _record(
         run_id=run_id,
         task=task,
@@ -268,12 +277,12 @@ def score_version_selection(
         model_name=model_name,
         prompt_version=prompt_version,
         metric="version_selection_accuracy",
-        numerator=int(selected is not None and selected.case_id == expected_case_id),
+        numerator=numerator,
         denominator=1,
         lower_is_better=False,
         detail=(
             f"group={group_name}; expected={expected_case_id}; "
-            f"selected={selected_id}; candidates={candidate_ids}"
+            f"selected={selected_id}; candidates={candidate_ids}{missing_clause}"
         ),
     )
 
