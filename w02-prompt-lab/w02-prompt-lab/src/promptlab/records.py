@@ -15,6 +15,7 @@ class Record(BaseModel):
 
 
 class UsageRecord(Record):
+    record_type: Literal["usage"] = "usage"
     run_id: str
     task: TaskName
     case_id: str
@@ -23,7 +24,7 @@ class UsageRecord(Record):
     prompt_version: str
     attempt: int
     kind: Literal["primary", "transport_retry", "repair", "repair_retry"]
-    status: Literal["success", "schema_invalid", "transport_error"]
+    status: Literal["success", "schema_invalid", "transport_error", "truncated"]
     prompt_tokens: int
     completion_tokens: int
     latency_ms: float
@@ -32,6 +33,7 @@ class UsageRecord(Record):
 
 
 class OutputRecord(Record):
+    record_type: Literal["output"] = "output"
     run_id: str
     task: TaskName
     case_id: str
