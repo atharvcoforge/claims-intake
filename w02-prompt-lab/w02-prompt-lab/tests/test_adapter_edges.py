@@ -173,3 +173,43 @@ def test_missing_token_counts_are_transient(monkeypatch: pytest.MonkeyPatch) -> 
     assert result.succeeded is False
     assert result.error_type == TransientProviderError.__name__
     assert len(result.records) == 3
+
+
+def test_think_false_is_sent_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_post(*args: object, **kwargs: object) -> FakeResponse:
+        captured["json"] = kwargs["json"]
+        return FakeResponse(
+            payload={
+                "response": "ok",
+                "prompt_eval_count": 4,
+                "eval_count": 2,
+                "done_reason": "stop",
+            }
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    adapter = OllamaAdapter(model_id=_model_id(), think=False)
+    adapter.complete(_request(), "run-think-off")
+    assert captured["json"]["think"] is False
+
+
+def test_think_is_omitted_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_post(*args: object, **kwargs: object) -> FakeResponse:
+        captured["json"] = kwargs["json"]
+        return FakeResponse(
+            payload={
+                "response": "ok",
+                "prompt_eval_count": 4,
+                "eval_count": 2,
+                "done_reason": "stop",
+            }
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    adapter = OllamaAdapter(model_id=_model_id())
+    adapter.complete(_request(), "run-think-default")
+    assert "think" not in captured["json"]

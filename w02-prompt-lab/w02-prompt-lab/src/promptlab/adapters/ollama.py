@@ -52,10 +52,13 @@ def classify_status(status: int, message: str) -> Exception:
 class OllamaAdapter:
     provider = "ollama"
 
-    def __init__(self, model_id: str, base_url: str | None = None) -> None:
+    def __init__(
+        self, model_id: str, base_url: str | None = None, *, think: bool | None = None
+    ) -> None:
         self.model_id = model_id
         resolved = base_url if base_url is not None else Settings.from_env().ollama_base_url
         self.base_url = resolved.rstrip("/")
+        self.think = think
 
     def complete(self, request: CompletionRequest, run_id: str) -> CompletionResult:
         self._require_known_model()
@@ -110,19 +113,22 @@ class OllamaAdapter:
             raise UnknownModelError(self.model_id)
 
     def _generate(self, request: CompletionRequest) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": self.model_id,
+            "prompt": request.user_content,
+            "system": request.system,
+            "stream": False,
+            "options": {
+                "temperature": request.temperature,
+                "num_predict": request.max_output_tokens,
+            },
+        }
+        if self.think is not None:
+            payload["think"] = self.think
         try:
             response = httpx.post(
                 f"{self.base_url}/api/generate",
-                json={
-                    "model": self.model_id,
-                    "prompt": request.user_content,
-                    "system": request.system,
-                    "stream": False,
-                    "options": {
-                        "temperature": request.temperature,
-                        "num_predict": request.max_output_tokens,
-                    },
-                },
+                json=payload,
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
         except httpx.TransportError as err:

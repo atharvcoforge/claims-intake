@@ -36,6 +36,7 @@ class ModelConfig:
     model_id: str
     input_usd_per_million: Decimal = Decimal("0")
     output_usd_per_million: Decimal = Decimal("0")
+    think: bool | None = None
 
     def cost(self, prompt_tokens: int, completion_tokens: int) -> Decimal:
         million = Decimal(1_000_000)
@@ -49,6 +50,7 @@ class ModelConfig:
 class Settings:
     ollama_base_url: str
     models: dict[str, ModelConfig]
+    comparison_models: tuple[str, ...]
     temperature: float
     max_retries: int
     max_schema_repairs: int
@@ -67,7 +69,11 @@ class Settings:
             models={
                 "mistral": ModelConfig(logical_name="mistral", model_id=model_a),
                 "qwen": ModelConfig(logical_name="qwen", model_id=model_b),
+                "qwen-nothink": ModelConfig(
+                    logical_name="qwen-nothink", model_id=model_b, think=False
+                ),
             },
+            comparison_models=("mistral", "qwen"),
             temperature=float(os.getenv("TEMPERATURE", "0.0")),
             max_retries=int(os.getenv("MAX_RETRIES", "2")),
             max_schema_repairs=int(os.getenv("MAX_SCHEMA_REPAIRS", "1")),

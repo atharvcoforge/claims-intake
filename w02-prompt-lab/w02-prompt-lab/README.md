@@ -155,6 +155,41 @@ Do not invent a cloud-model price for Mistral or Qwen in this local lab.
 - Use timezone-aware UTC timestamps.
 - Day 1 uses Mistral only; Qwen is reserved for later model-comparison work.
 
+## Day 5
+
+Day 5 is the integration run: three tasks, the configured local models, deterministic scoring, and a written recommendation.
+
+From the repository root inside the environment that can reach Ollama:
+
+```bash
+uv run promptlab --run-id day5-02
+```
+
+With no task or model filter, that command runs the three tasks against the two comparison models (`mistral` and `qwen`): 3 × 2 × 12 = 72 evaluations. To include the thinking-disabled Qwen configuration as well:
+
+```bash
+uv run promptlab --run-id day5-02 --model mistral --model qwen --model qwen-nothink
+```
+
+That writes:
+
+```text
+docs/day5-run.jsonl
+docs/day5-scores.jsonl
+reports/comparison.md
+docs/model-decision.md
+```
+
+`qwen-nothink` is the same configured `model_id` as `qwen` with thinking disabled. It is not a new prompt version.
+
+Quality checks for the Day 5 harness:
+
+```bash
+uv run pytest
+uv run ruff check
+uv run mypy
+```
+
 ## Repository Layout
 
 ```text

@@ -110,7 +110,8 @@ def main() -> None:
     prepared = [(case, *split_prompt(template, str(case["source"]))) for case in load_cases()]
     collected: list[CallRecord] = []
 
-    for model in settings.models.values():
+    for name in settings.comparison_models:
+        model = settings.models[name]
         adapter = OllamaAdapter(model_id=model.model_id, base_url=settings.ollama_base_url)
         for case, system, user_content in prepared:
             request = build_request(case, system, user_content, settings.temperature)

@@ -266,7 +266,7 @@ def test_report_day5_labels_transfer_and_reports_counts(tmp_path: Path) -> None:
     assert "%" not in text.split("## Limits")[0]
     assert "Median latency" in text
     assert "Max latency" in text
-    assert "n |" in text or "| n |" in text
+    assert "Cases" in text
     assert "$0.00" in text
     assert "12" in text.split("## Limits")[1]
     assert "mistral" in text.split("## Human boundary")[1]
@@ -573,3 +573,159 @@ def test_extraction_prefers_recall_then_names_failures(tmp_path: Path) -> None:
     assert "1 failed" in decision
     assert "scored as zeros" in text
     assert "1 evaluation produced no validated output" in text
+
+
+def test_headline_latency_sums_retries_per_case(tmp_path: Path) -> None:
+    usage = [
+        _usage(
+            model_name="mistral",
+            prompt_version="v1",
+            case_id="T01",
+            latency_ms=100,
+            attempt=1,
+        ),
+        _usage(
+            model_name="mistral",
+            prompt_version="v1",
+            case_id="T01",
+            latency_ms=200,
+            attempt=2,
+            kind="transport_retry",
+        ),
+        _usage(
+            model_name="mistral",
+            prompt_version="v1",
+            case_id="T02",
+            latency_ms=400,
+        ),
+    ]
+    outputs = [
+        _output(model_name="mistral", prompt_version="v1", case_id="T01"),
+        _output(model_name="mistral", prompt_version="v1", case_id="T02"),
+    ]
+    scores = [
+        _score(
+            model_name="mistral",
+            prompt_version="v1",
+            case_id="T01",
+            metric="queue_accuracy",
+            numerator=1,
+        ),
+        _score(
+            model_name="mistral",
+            prompt_version="v1",
+            case_id="T02",
+            metric="queue_accuracy",
+            numerator=1,
+        ),
+        _score(
+            model_name="mistral",
+            prompt_version="v1",
+            case_id="T01",
+            metric="human_boundary_compliance",
+            numerator=1,
+        ),
+        _score(
+            model_name="mistral",
+            prompt_version="v1",
+            case_id="T02",
+            metric="human_boundary_compliance",
+            numerator=1,
+        ),
+        _score(
+            model_name="mistral",
+            prompt_version="v1",
+            case_id="T01",
+            metric="pii_leakage",
+            numerator=0,
+            lower_is_better=True,
+        ),
+        _score(
+            model_name="mistral",
+            prompt_version="v1",
+            case_id="T02",
+            metric="pii_leakage",
+            numerator=0,
+            lower_is_better=True,
+        ),
+    ]
+    text, _decision = _write(tmp_path, usage, outputs, scores)
+    assert "| 2 |" in text
+    assert "350 ms" in text
+    assert "400 ms" in text
+    assert "Attempt median" in text
+    assert "200 ms" in text
+
+
+def test_citation_correctness_notes_non_contributing_failures(tmp_path: Path) -> None:
+    usage = [
+        _usage(
+            model_name="mistral",
+            prompt_version="v2",
+            case_id="E01",
+            latency_ms=100,
+            task="extraction",
+        ),
+        _usage(
+            model_name="mistral",
+            prompt_version="v2",
+            case_id="E02",
+            latency_ms=200,
+            task="extraction",
+        ),
+    ]
+    outputs = [
+        _output(
+            model_name="mistral",
+            prompt_version="v2",
+            case_id="E01",
+            task="extraction",
+        ),
+        _output(
+            model_name="mistral",
+            prompt_version="v2",
+            case_id="E02",
+            succeeded=False,
+            task="extraction",
+        ),
+    ]
+    scores = [
+        _score(
+            model_name="mistral",
+            prompt_version="v2",
+            case_id="E01",
+            metric="required_evidence_recall",
+            numerator=6,
+            denominator=6,
+            task="extraction",
+        ),
+        _score(
+            model_name="mistral",
+            prompt_version="v2",
+            case_id="E02",
+            metric="required_evidence_recall",
+            numerator=0,
+            denominator=6,
+            task="extraction",
+        ),
+        _score(
+            model_name="mistral",
+            prompt_version="v2",
+            case_id="E01",
+            metric="citation_correctness",
+            numerator=6,
+            denominator=6,
+            task="extraction",
+        ),
+        _score(
+            model_name="mistral",
+            prompt_version="v2",
+            case_id="E02",
+            metric="citation_correctness",
+            numerator=0,
+            denominator=0,
+            task="extraction",
+        ),
+    ]
+    text, _decision = _write(tmp_path, usage, outputs, scores)
+    assert "citation_correctness: 6/6 (1/2 cases contributed)" in text

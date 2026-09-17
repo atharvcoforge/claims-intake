@@ -87,8 +87,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        choices=["mistral", "qwen"],
-        help="Optional model filter; default runs both configured models",
+        action="append",
+        dest="models",
+        metavar="NAME",
+        help="Optional model filter; may be repeated. Default: configured comparison models.",
     )
     parser.add_argument("--limit", type=int, help="Limit cases per task for a smoke run")
     parser.add_argument(
@@ -100,7 +102,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _default_adapter_factory(model: ModelConfig, settings: Settings) -> ModelAdapter:
-    return OllamaAdapter(model_id=model.model_id, base_url=settings.ollama_base_url)
+    return OllamaAdapter(
+        model_id=model.model_id,
+        base_url=settings.ollama_base_url,
+        think=model.think,
+    )
 
 
 def _usage_kind(semantic_call: int, attempt: int) -> str:
@@ -111,6 +117,16 @@ def _usage_kind(semantic_call: int, attempt: int) -> str:
     if semantic_call > 1 and attempt == 1:
         return "repair"
     return "repair_retry"
+
+
+def _usage_status(call: CallRecord, *, final_id: str | None) -> str:
+    if call.error_type == "TruncatedResponseError":
+        return "truncated"
+    if call.error_type is not None:
+        return "transport_error"
+    if final_id is not None and call.record_id == final_id:
+        return "success"
+    return "schema_invalid"
 
 
 def _classify_usage(
@@ -129,12 +145,6 @@ def _classify_usage(
 
     for semantic_index, batch in enumerate(batches, start=1):
         for call in batch:
-            if call.error_type is not None:
-                status = "transport_error"
-            elif final_id is not None and call.record_id == final_id:
-                status = "success"
-            else:
-                status = "schema_invalid"
             records.append(
                 UsageRecord(
                     run_id=run_id,
@@ -145,7 +155,7 @@ def _classify_usage(
                     prompt_version=prompt_version,
                     attempt=call.attempt,
                     kind=_usage_kind(semantic_index, call.attempt),  # type: ignore[arg-type]
-                    status=status,  # type: ignore[arg-type]
+                    status=_usage_status(call, final_id=final_id),  # type: ignore[arg-type]
                     prompt_tokens=call.input_tokens,
                     completion_tokens=call.output_tokens,
                     latency_ms=float(call.latency_ms),
@@ -219,9 +229,11 @@ def _add_version_scores(
             continue
 
         candidates: list[VersionCandidate] = []
+        missing: list[str] = []
         for label in group_labels:
             output = outputs.get(label.id)
             if output is None:
+                missing.append(label.id)
                 continue
             extracted = _version_fields(output)
             if extracted is None:
@@ -246,6 +258,7 @@ def _add_version_scores(
             expected_case_id=expected,
             as_of=date.fromisoformat(as_of_raw),
             candidates=candidates,
+            missing_case_ids=missing,
         )
         append_lab_record(scores_path, record)
         all_scores.append(record)
@@ -480,7 +493,16 @@ def main(argv: list[str] | None = None) -> None:
         selected_tasks = ["triage", "summarization", "extraction"]
 
     settings = Settings.from_env()
-    selected_models = [cast(str, args.model)] if args.model else list(settings.models)
+    if args.models:
+        unknown = [name for name in args.models if name not in settings.models]
+        if unknown:
+            known = ", ".join(settings.models)
+            raise SystemExit(
+                f"unknown model(s): {', '.join(unknown)}. configured: {known}"
+            )
+        selected_models = list(args.models)
+    else:
+        selected_models = list(settings.comparison_models)
 
     run_evaluation(
         run_id=run_id,

@@ -234,6 +234,7 @@ def test_main_runs_three_cases_then_truncation(
     settings = Settings(
         ollama_base_url="http://ollama.test",
         models={"mistral": model, "qwen": model},
+        comparison_models=("mistral", "qwen"),
         temperature=0.0,
         max_retries=2,
         max_schema_repairs=1,

@@ -147,12 +147,12 @@ def test_full_harness_offline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.chdir(tmp_path)
     settings = Settings.from_env()
     adapters: dict[str, FakeAdapter] = {
-        model.model_id: FakeAdapter(model.model_id) for model in settings.models.values()
+        model.logical_name: FakeAdapter(model.model_id) for model in settings.models.values()
     }
 
     # Force one case through all usage kinds/statuses on mistral triage T01.
     mistral = settings.models["mistral"]
-    adapters[mistral.model_id].script(
+    adapters[mistral.logical_name].script(
         "T01",
         [
             CompletionResult(
@@ -241,7 +241,7 @@ def test_full_harness_offline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     )
 
     def factory(model, _settings):  # type: ignore[no-untyped-def]
-        return adapters[model.model_id]
+        return adapters[model.logical_name]
 
     docs_run = tmp_path / "docs" / "day5-run.jsonl"
     docs_scores = tmp_path / "docs" / "day5-scores.jsonl"
@@ -271,6 +271,8 @@ def test_full_harness_offline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     statuses = {row.status for row in usage}
     assert kinds >= {"primary", "transport_retry", "repair", "repair_retry"}
     assert statuses >= {"success", "schema_invalid", "transport_error"}
+    assert {row.record_type for row in usage} == {"usage"}
+    assert {row.record_type for row in outputs} == {"output"}
 
     output_keys = {
         (row.run_id, row.task, row.case_id, row.model_name, row.prompt_version)
@@ -304,11 +306,11 @@ def test_cli_filters_task_and_model(
     monkeypatch.chdir(tmp_path)
     settings = Settings.from_env()
     adapters = {
-        model.model_id: FakeAdapter(model.model_id) for model in settings.models.values()
+        model.logical_name: FakeAdapter(model.model_id) for model in settings.models.values()
     }
 
     def factory(model, _settings):  # type: ignore[no-untyped-def]
-        return adapters[model.model_id]
+        return adapters[model.logical_name]
 
     usage, outputs, scores = run_evaluation(
         run_id="day5-filter",
@@ -354,3 +356,63 @@ def test_recording_adapter_counts_semantic_calls() -> None:
     adapter.complete(request, "run")
     assert adapter.calls == 2
     assert len(adapter.records) == 2
+
+
+def test_truncated_call_is_classified_as_truncated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    settings = Settings.from_env()
+    adapters = {
+        model.logical_name: FakeAdapter(model.model_id) for model in settings.models.values()
+    }
+    mistral = settings.models["mistral"]
+    request = CompletionRequest(
+        task="extraction",
+        case_id="E01",
+        prompt_id="extract",
+        prompt_version="v2",
+        system="",
+        user_content="x",
+        temperature=0.0,
+        max_output_tokens=MAX_OUTPUT_TOKENS,
+    )
+    adapters[mistral.logical_name].script(
+        "E01",
+        [
+            CompletionResult(
+                succeeded=False,
+                text="partial",
+                error_type="TruncatedResponseError",
+                records=[
+                    _call(
+                        request=request,
+                        run_id="day5-trunc",
+                        model_id=mistral.model_id,
+                        attempt=1,
+                        error_type="TruncatedResponseError",
+                        text="partial",
+                    )
+                ],
+            )
+        ],
+    )
+
+    def factory(model, _settings):  # type: ignore[no-untyped-def]
+        return adapters[model.logical_name]
+
+    usage, outputs, _scores = run_evaluation(
+        run_id="day5-trunc",
+        tasks=["extraction"],
+        model_names=["mistral"],
+        limit=1,
+        settings=settings,
+        adapter_factory=factory,
+        docs_run_path=tmp_path / "docs" / "day5-run.jsonl",
+        docs_scores_path=tmp_path / "docs" / "day5-scores.jsonl",
+        report_path=tmp_path / "reports" / "comparison.md",
+        decision_path=tmp_path / "docs" / "model-decision.md",
+        runs_root=tmp_path / "runs",
+    )
+    assert outputs[0].succeeded is False
+    assert {row.status for row in usage} == {"truncated"}

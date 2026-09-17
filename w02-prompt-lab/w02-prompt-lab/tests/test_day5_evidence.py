@@ -34,8 +34,8 @@ def _load_jsonl(path: Path) -> list[dict[str, object]]:
 def test_day5_evidence_shared_run_and_coverage() -> None:
     run_rows = _load_jsonl(DOCS_RUN)
     score_rows = _load_jsonl(DOCS_SCORES)
-    outputs = [row for row in run_rows if "succeeded" in row]
-    usage = [row for row in run_rows if "kind" in row]
+    outputs = [row for row in run_rows if row.get("record_type") == "output"]
+    usage = [row for row in run_rows if row.get("record_type") == "usage"]
     calls = [row for row in run_rows if "record_id" in row and "input_tokens" in row]
     assert outputs, "day5-run.jsonl must include OutputRecord rows"
     assert usage, "day5-run.jsonl must include UsageRecord rows"
@@ -48,7 +48,7 @@ def test_day5_evidence_shared_run_and_coverage() -> None:
     assert run_ids == {str(row["run_id"]) for row in calls}
 
     for task in ("triage", "summarization", "extraction"):
-        for model in ("mistral", "qwen"):
+        for model in ("mistral", "qwen", "qwen-nothink"):
             case_ids = {
                 str(row["case_id"])
                 for row in outputs
@@ -81,7 +81,7 @@ def test_day5_evidence_shared_run_and_coverage() -> None:
 
 
 def test_day5_evidence_boundary_and_no_pii() -> None:
-    outputs = [row for row in _load_jsonl(DOCS_RUN) if "succeeded" in row]
+    outputs = [row for row in _load_jsonl(DOCS_RUN) if row.get("record_type") == "output"]
     triage = [
         row
         for row in outputs
@@ -89,7 +89,7 @@ def test_day5_evidence_boundary_and_no_pii() -> None:
     ]
     assert triage
     models = {str(row["model_name"]) for row in triage}
-    assert models == {"mistral", "qwen"}
+    assert models == {"mistral", "qwen", "qwen-nothink"}
 
     for row in triage:
         payload = row["output"]
